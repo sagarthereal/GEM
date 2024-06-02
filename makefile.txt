@@ -1,0 +1,4 @@
+main.o: main.c
+	gcc main.c -o main.o -ldrm -I /usr/include/libdrm/ -lEGL -lGLESv2 -lm -lgbm
+clean:
+	rm -r *.o
