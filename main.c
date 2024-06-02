@@ -2,34 +2,42 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 #include <sys/mman.h>
+#include <string.h>
+#include <drm/drm.h>
 #include <drm/i915_drm.h>
+#include <xf86drm.h>
+#include <xf86drmMode.h>
 
 int main() {
-    int fd = open("/dev/dri/card0", O_RDWR);
+    int fd;
+    struct drm_i915_gem_create gem_create = {};
+    uint32_t size;
+    void *map;
+
+    fd = open("/dev/dri/card0", O_RDWR);
     if (fd < 0) {
         perror("open /dev/dri/card0");
         return EXIT_FAILURE;
     }
 
-    struct drm_i915_gem_create create = { .size = 4096 }; // 4KB buffer
-    if (ioctl(fd, DRM_IOCTL_I915_GEM_CREATE, &create) < 0) {
+    size = 4096; // Example size: 4KB, adjust as needed
+
+    // Align size to the page size
+    size = (size + getpagesize() - 1) & ~(getpagesize() - 1);
+
+    gem_create.size = size;
+
+    // Create GEM buffer
+    if (ioctl(fd, DRM_IOCTL_I915_GEM_CREATE, &gem_create) < 0) {
         perror("DRM_IOCTL_I915_GEM_CREATE");
         close(fd);
         return EXIT_FAILURE;
     }
 
-    struct drm_i915_gem_mmap mmap_arg = { 
-        .handle = create.handle, 
-        .size = create.size 
-    };
-    if (ioctl(fd, DRM_IOCTL_I915_GEM_MMAP, &mmap_arg) < 0) {
-        perror("DRM_IOCTL_I915_GEM_MMAP");
-        close(fd);
-        return EXIT_FAILURE;
-    }
-
-    void *map = mmap(0, create.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, mmap_arg.offset);
+    // Map the buffer to user space
+    map = mmap(0, gem_create.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, gem_create.handle);
     if (map == MAP_FAILED) {
         perror("mmap");
         close(fd);
@@ -37,12 +45,10 @@ int main() {
     }
 
     // Use the buffer (for demonstration, fill it with zeros)
-    memset(map, 0, create.size);
+    memset(map, 0, size);
 
-    // Clean up
-    munmap(map, create.size);
-    struct drm_gem_close close_buf = { .handle = create.handle };
-    ioctl(fd, DRM_IOCTL_GEM_CLOSE, &close_buf);
+    // Unmap the buffer and close the DRM device
+    munmap(map, gem_create.size);
     close(fd);
 
     return EXIT_SUCCESS;
